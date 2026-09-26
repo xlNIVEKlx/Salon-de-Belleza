@@ -53,7 +53,7 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Apache POI para reportes de Excel -->
+        <!-- Apache POI para reportes de Excel (Soluciona el error actual) -->
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi</artifactId>
