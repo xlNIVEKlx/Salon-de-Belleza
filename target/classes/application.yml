@@ -3,10 +3,14 @@ spring:
     active: dev
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/salon_belleza
-    username: admin
-    password: admin123
-    driver-class-name: org.postgresql.Driver
+    url: jdbc:h2:mem:salon_belleza;DB_CLOSE_DELAY=-1
+    username: sa
+    password: 
+    driver-class-name: org.h2.Driver
+
+  h2:
+    console:
+      enabled: true
 
   jpa:
     hibernate:
@@ -15,6 +19,7 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
         jdbc:
           time_zone: America/Bogota
 
