@@ -12,7 +12,7 @@ spring:
   datasource:
     url: jdbc:h2:mem:salon_belleza;DB_CLOSE_DELAY=-1
     username: sa
-    password: 
+    password:
     driver-class-name: org.h2.Driver
   h2:
     console:
@@ -35,8 +35,13 @@ spring:
     activate:
       on-profile: production
   datasource:
-    url: ${DATABASE_URL}
+    url: jdbc:postgresql://db.abtiwgajogkemhjwrgcs.supabase.co:5432/postgres?sslmode=require
+    username: postgres
+    password: anciano098765
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 30000
+      maximum-pool-size: 5
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
@@ -45,8 +50,13 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: ${PORT:8080}
 
 logging:
   level:
     com.salon.belleza: DEBUG
     org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
