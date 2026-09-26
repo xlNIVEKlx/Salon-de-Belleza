@@ -1,17 +1,22 @@
 spring:
+  application:
+    name: salon-belleza
   profiles:
-    active: dev
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
   datasource:
     url: jdbc:h2:mem:salon_belleza;DB_CLOSE_DELAY=-1
     username: sa
     password: 
     driver-class-name: org.h2.Driver
-
   h2:
     console:
       enabled: true
-
   jpa:
     hibernate:
       ddl-auto: update
@@ -20,14 +25,28 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.H2Dialect
-        jdbc:
-          time_zone: America/Bogota
 
 server:
   port: 8080
+
+---
+spring:
+  config:
+    activate:
+      on-profile: production
+  datasource:
+    url: ${DATABASE_URL}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
 
 logging:
   level:
     com.salon.belleza: DEBUG
     org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
