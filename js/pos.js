@@ -225,11 +225,83 @@ const POS = {
                     <p class="font-bold text-gray-800 text-sm">${s.servicioNombre}</p>
                     <p class="text-xs text-gray-500">Realizados: ${s.cantidadTotal}</p>
                 </div>
-                <div class="text-right">
-                    <p class="font-bold text-pink-600 text-sm">${UI.formatCurrency(s.totalCobrado)}</p>
-                    <p class="text-xs text-green-600">Comisión: ${UI.formatCurrency(s.totalComision)}</p>
+                <div class="flex items-center gap-3">
+                    <div class="text-right">
+                        <p class="font-bold text-pink-600 text-sm">${UI.formatCurrency(s.totalCobrado)}</p>
+                        <p class="text-xs text-green-600">Comisión: ${UI.formatCurrency(s.totalComision)}</p>
+                    </div>
+                    <button onclick="POS.confirmarEliminarServicio('${s.servicioNombre.replace(/'/g, "\\'")}')"
+                        class="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition"
+                        title="Eliminar un servicio">
+                        <i class="fa-solid fa-trash-can text-sm"></i>
+                    </button>
                 </div>
             </div>
         `).join('');
+    },
+
+    /**
+     * Confirmación previa a la eliminación de un servicio registrado
+     */
+    async confirmarEliminarServicio(servicioNombre) {
+        if (!confirm('¿Seguro que quieres eliminar este servicio?')) return;
+        await this.eliminarUnServicio(servicioNombre);
+    },
+
+    /**
+     * Elimina un único registro del servicio en la jornada activa de la trabajadora
+     */
+    async eliminarUnServicio(servicioNombre) {
+        if (!this.jornadaActiva) {
+            UI.showAlert('No tienes una jornada activa.', 'warning');
+            return;
+        }
+
+        // Obtener el ID del servicio a partir del catálogo en memoria o BD
+        const serv = this.catalogo.find(c => c.nombre === servicioNombre);
+        let servicioId = serv ? serv.id : null;
+
+        if (!servicioId) {
+            const { data: servData } = await db
+                .from('catalogo_servicios')
+                .select('id')
+                .eq('nombre', servicioNombre)
+                .maybeSingle();
+            if (servData) servicioId = servData.id;
+        }
+
+        if (!servicioId) {
+            UI.showAlert('No se encontró el servicio para eliminar.', 'error');
+            return;
+        }
+
+        // Buscar el último registro insertado de este servicio en la jornada activa
+        const { data: reg, error: regError } = await db
+            .from('servicios_realizados')
+            .select('id')
+            .eq('jornada_id', this.jornadaActiva.id)
+            .eq('servicio_id', servicioId)
+            .order('fecha_registro', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (regError || !reg) {
+            UI.showAlert('No se encontró ningún registro para eliminar.', 'error');
+            return;
+        }
+
+        // Eliminar únicamente ese registro
+        const { error: delError } = await db
+            .from('servicios_realizados')
+            .delete()
+            .eq('id', reg.id);
+
+        if (delError) {
+            UI.showAlert('Error al eliminar servicio: ' + delError.message, 'error');
+            return;
+        }
+
+        UI.showAlert(`Se eliminó 1 servicio de ${servicioNombre}`, 'success');
+        await this.actualizarResumen();
     }
 };
