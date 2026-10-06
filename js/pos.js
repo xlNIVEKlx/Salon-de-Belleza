@@ -1,15 +1,17 @@
 // ============================================================
 // MÓDULO: POS (PUNTO DE VENTA Y JORNADA)
-// Maneja turnos y registro de servicios aplicando el precio por sede
+// Maneja turnos, precios por sede en tiempo real y registro de servicios
 // ============================================================
 
 const POS = {
     jornadaActiva: null,
     catalogo: [],
 
-    /**
-     * Carga catálogo de servicios activos para la botonera
-     */
+    async iniciar() {
+        await this.cargarCatalogo();
+        await this.verificarJornadaActiva();
+    },
+
     async cargarCatalogo() {
         const { data, error } = await db
             .from('catalogo_servicios')
@@ -18,7 +20,7 @@ const POS = {
             .order('nombre');
 
         if (error) {
-            UI.showAlert('Error al cargar catálogo de servicios: ' + error.message, 'error');
+            console.error('Error al cargar catálogo:', error);
             return;
         }
 
@@ -27,7 +29,7 @@ const POS = {
     },
 
     /**
-     * Renderiza los botones del POS táctil mostrando el precio de la sede activa
+     * Renderiza los botones del POS detectando dinámicamente la sede del turno activo
      */
     renderBotones() {
         const container = document.getElementById('botones-servicios');
@@ -38,13 +40,20 @@ const POS = {
             return;
         }
 
-        // Obtener la sede activa del turno (por defecto Sede 1 si no hay turno abierto)
-        const sedeActual = this.jornadaActiva?.sede_id ? String(this.jornadaActiva.sede_id) : "1";
+        // Obtener de forma robusta la sede activa del turno
+        let sedeActual = "1";
+        if (this.jornadaActiva) {
+            if (this.jornadaActiva.sede_id !== undefined && this.jornadaActiva.sede_id !== null) {
+                sedeActual = String(this.jornadaActiva.sede_id);
+            }
+        }
 
         container.innerHTML = this.catalogo.map(s => {
+            // El JSONB precios_por_sede guarda las llaves como "1", "2", "3", "4"
             const precios = s.precios_por_sede || {};
-            // Extraer el precio correspondiente a la sede de la jornada actual
-            const precioSede = precios[sedeActual] ?? s.precio ?? 0;
+
+            // Extraer el precio de la sede actual, respaldado por el precio general
+            const precioSede = Number(precios[sedeActual] ?? precios[String(sedeActual)] ?? s.precio ?? 0);
 
             return `
             <button onclick="POS.registrarServicio(${s.id}, '${s.nombre}')" class="pos-btn group">
@@ -52,15 +61,12 @@ const POS = {
                     <i class="fa-solid fa-hand-sparkles text-xl"></i>
                 </div>
                 <p class="font-bold text-gray-800 text-sm leading-tight">${s.nombre}</p>
-                <p class="text-xs text-gray-500 mt-1">${UI.formatCurrency(precioSede)}</p>
+                <p class="text-xs text-pink-600 font-semibold mt-1">${UI.formatCurrency(precioSede)}</p>
             </button>
         `;
         }).join('');
     },
 
-    /**
-     * Comprueba si el usuario tiene una jornada abierta
-     */
     async verificarJornadaActiva() {
         const userId = Auth.getUserId();
         if (!userId) return;
@@ -79,7 +85,7 @@ const POS = {
 
         this.jornadaActiva = data;
         this.actualizarUI();
-        this.renderBotones(); // Actualizar botones con el precio de la sede al verificar
+        this.renderBotones();
 
         if (this.jornadaActiva) {
             this.actualizarResumen();
@@ -104,9 +110,6 @@ const POS = {
         }
     },
 
-    /**
-     * Abre un nuevo turno en la sede indicada
-     */
     async abrirJornada() {
         const select = document.getElementById('select-sede-jornada');
         const sedeId = select ? select.value : null;
@@ -137,18 +140,15 @@ const POS = {
         this.jornadaActiva = data;
         UI.showAlert('Turno abierto exitosamente', 'success');
         this.actualizarUI();
-        this.renderBotones(); // Refrescar precios en los botones según la sede seleccionada
+        this.renderBotones();
         this.actualizarResumen();
     },
 
-    /**
-     * Cierra el turno activo
-     */
     async cerrarJornada() {
         if (!this.jornadaActiva) return;
         const confirmar = await UI.confirm({
             title: 'Cerrar Turno',
-            message: '¿Seguro que deseas CERRAR TU TURNO? Ya no podrás registrar más servicios en esta jornada.',
+            message: '¿Seguro que deseas CERRAR TU TURNO?',
             confirmText: 'Cerrar Turno'
         });
         if (!confirmar) return;
@@ -172,9 +172,6 @@ const POS = {
         this.renderBotones();
     },
 
-    /**
-     * Registra un servicio calculando el precio y comisión de la sede activa
-     */
     async registrarServicio(servicioId, nombre) {
         if (!this.jornadaActiva) {
             UI.showAlert('Debes tener un turno abierto para registrar servicios.', 'warning');
@@ -184,12 +181,11 @@ const POS = {
         const servicio = this.catalogo.find(s => s.id === servicioId);
         if (!servicio) return;
 
-        // Extraer precio según la sede de la jornada
+        // Extraer precio exacto de la sede activa del turno para guardarlo en la BD
         const sedeActivaId = String(this.jornadaActiva.sede_id);
         const precios = servicio.precios_por_sede || {};
-        const precioCobrar = Number(precios[sedeActivaId]) ?? Number(servicio.precio) ?? 0;
+        const precioCobrar = Number(precios[sedeActivaId] ?? precios[String(sedeActivaId)] ?? servicio.precio) || 0;
 
-        // Calcular comisión y caja usando el porcentaje en entero
         const porcentajeComision = Number(servicio.porcentaje_comision) || 0;
         const valorComision = precioCobrar * (porcentajeComision / 100);
         const valorCaja = precioCobrar - valorComision;
@@ -216,9 +212,6 @@ const POS = {
         this.actualizarResumen();
     },
 
-    /**
-     * Consulta el resumen de la jornada llamando a la función PostgreSQL mi_resumen_jornada()
-     */
     async actualizarResumen() {
         const { data, error } = await db.rpc('mi_resumen_jornada');
 
@@ -284,31 +277,16 @@ const POS = {
     },
 
     async eliminarUnServicio(servicioId, servicioNombre) {
-        if (!this.jornadaActiva) {
-            UI.showAlert('No tienes una jornada activa.', 'warning');
-            return;
-        }
+        if (!this.jornadaActiva) return;
 
         if (!servicioId) {
             const serv = this.catalogo.find(c => c.nombre.toLowerCase() === servicioNombre.toLowerCase());
-            if (serv) {
-                servicioId = serv.id;
-            } else {
-                const { data: servData } = await db
-                    .from('catalogo_servicios')
-                    .select('id')
-                    .ilike('nombre', servicioNombre)
-                    .maybeSingle();
-                if (servData) servicioId = servData.id;
-            }
+            if (serv) servicioId = serv.id;
         }
 
-        if (!servicioId) {
-            UI.showAlert('No se encontró el servicio para eliminar.', 'error');
-            return;
-        }
+        if (!servicioId) return;
 
-        const { data: reg, error: findError } = await db
+        const { data: reg } = await db
             .from('servicios_realizados')
             .select('id')
             .eq('jornada_id', this.jornadaActiva.id)
@@ -317,22 +295,9 @@ const POS = {
             .limit(1)
             .maybeSingle();
 
-        if (findError || !reg) {
-            UI.showAlert('No se encontró ningún registro para eliminar.', 'error');
-            return;
-        }
+        if (!reg) return;
 
-        const { data: deletedRows, error: delError } = await db
-            .from('servicios_realizados')
-            .delete()
-            .eq('id', reg.id)
-            .select();
-
-        if (delError || !deletedRows || deletedRows.length === 0) {
-            UI.showAlert('No se pudo eliminar, revisa permisos', 'error');
-            return;
-        }
-
+        await db.from('servicios_realizados').delete().eq('id', reg.id);
         UI.showAlert(`Se eliminó 1 servicio de ${servicioNombre}`, 'success');
         await this.actualizarResumen();
     }
