@@ -161,8 +161,7 @@ const POS = {
     },
 
     /**
-     * Registra un servicio en la jornada activa
-     * NOTA: Los valores de dinero se calculan automáticamente con el Trigger en BD.
+     * Registra un servicio en la jornada activa calculando el precio según la sede
      */
     async registrarServicio(servicioId, nombre) {
         if (!this.jornadaActiva) {
@@ -170,18 +169,34 @@ const POS = {
             return;
         }
 
-        // Enviamos valores por defecto a los campos financieros porque el Trigger BEFORE INSERT los calcula
+        // 1. Buscar el servicio en el catálogo para conocer sus precios y comisión
+        const servicio = this.catalogo.find(s => s.id === servicioId);
+        if (!servicio) return;
+
+        // 2. Extraer el precio dependiendo de la sede donde se abrió el turno
+        const sedeActivaId = this.jornadaActiva.sede_id;
+        const precios = servicio.precios_por_sede || {};
+
+        // Si existe un precio para esta sede lo usa, de lo contrario usa el precio base
+        const precioCobrar = Number(precios[sedeActivaId]) || Number(servicio.precio) || 0;
+
+        // 3. Calculamos todo aquí en el frontend para asegurar exactitud
+        const comisionPorcentaje = Number(servicio.comision_porcentaje) || 0;
+        const valorComision = precioCobrar * (comisionPorcentaje / 100);
+        const valorCaja = precioCobrar - valorComision;
+
+        // 4. Enviamos los valores reales calculados a Supabase
         const { error } = await db
             .from('servicios_realizados')
             .insert([{
                 jornada_id: this.jornadaActiva.id,
                 servicio_id: servicioId,
                 cantidad: 1,
-                precio_unitario: 0,
-                porcentaje_comision_aplicado: 0,
-                total_cobrado: 0,
-                comision_empleada: 0,
-                total_caja_salon: 0
+                precio_unitario: precioCobrar,
+                porcentaje_comision_aplicado: comisionPorcentaje,
+                total_cobrado: precioCobrar,
+                comision_empleada: valorComision,
+                total_caja_salon: valorCaja
             }]);
 
         if (error) {
@@ -189,7 +204,7 @@ const POS = {
             return;
         }
 
-        UI.showAlert(`¡Registrado: 1 x ${nombre}!`, 'success');
+        UI.showAlert(`¡Registrado: 1 x ${nombre} por ${UI.formatCurrency(precioCobrar)}!`, 'success');
         this.actualizarResumen();
     },
 
