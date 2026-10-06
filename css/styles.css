@@ -189,34 +189,3 @@ select {
 ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
 }
-
-/* Carrusel horizontal táctil para servicios en celular */
-@media (max-width: 768px) {
-    #botones-servicios {
-        display: flex !important;
-        flex-direction: row !important;
-        overflow-x: auto !important;
-        overflow-y: hidden !important;
-        scroll-snap-type: x mandatory;
-        -webkit-overflow-scrolling: touch;
-        gap: 0.75rem !important;
-        padding-bottom: 0.25rem;
-        scrollbar-width: none;
-        /* Firefox */
-        -ms-overflow-style: none;
-        /* IE/Edge */
-    }
-
-    #botones-servicios::-webkit-scrollbar {
-        display: none;
-        /* Chrome, Safari, Android, iOS */
-    }
-
-    #botones-servicios .pos-btn {
-        flex: 0 0 148px !important;
-        width: 148px !important;
-        min-width: 148px !important;
-        max-width: 148px !important;
-        scroll-snap-align: start;
-    }
-}
