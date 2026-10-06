@@ -224,7 +224,12 @@ const POS = {
             return;
         }
 
-        list.innerHTML = resumen.servicios.map(s => `
+        list.innerHTML = resumen.servicios.map(s => {
+            const servObj = this.catalogo.find(c => c.nombre.toLowerCase() === s.servicioNombre.toLowerCase());
+            const servIdArg = servObj ? servObj.id : 'null';
+            const servNombreEscaped = s.servicioNombre.replace(/'/g, "\\'");
+
+            return `
             <div class="bg-gray-50 rounded-lg p-3 border border-gray-100 flex justify-between items-center">
                 <div>
                     <p class="font-bold text-gray-800 text-sm">${s.servicioNombre}</p>
@@ -235,20 +240,21 @@ const POS = {
                         <p class="font-bold text-pink-600 text-sm">${UI.formatCurrency(s.totalCobrado)}</p>
                         <p class="text-xs text-green-600">Comisión: ${UI.formatCurrency(s.totalComision)}</p>
                     </div>
-                    <button onclick="POS.confirmarEliminarServicio('${s.servicioNombre.replace(/'/g, "\\'")}')"
+                    <button onclick="POS.confirmarEliminarServicio(${servIdArg}, '${servNombreEscaped}')"
                         class="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition"
                         title="Eliminar un servicio">
                         <i class="fa-solid fa-trash-can text-sm"></i>
                     </button>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
     },
 
     /**
-     * Confirmación previa a la eliminación de un servicio registrado
+     * Confirmación previa a la eliminación de un servicio registrado usando el modal de la app
      */
-    async confirmarEliminarServicio(servicioNombre) {
+    async confirmarEliminarServicio(servicioId, servicioNombre) {
         const confirmar = await UI.confirm({
             title: 'Eliminar servicio registrado',
             message: '¿Seguro que quieres eliminar este servicio?',
@@ -256,62 +262,82 @@ const POS = {
             confirmText: 'Eliminar'
         });
         if (!confirmar) return;
-        await this.eliminarUnServicio(servicioNombre);
+        await this.eliminarUnServicio(servicioId, servicioNombre);
     },
 
     /**
-     * Elimina un único registro del servicio en la jornada activa de la trabajadora
+     * Elimina un único registro del servicio usando su id individual y recalcula los totales
      */
-    async eliminarUnServicio(servicioNombre) {
+    async eliminarUnServicio(servicioId, servicioNombre) {
         if (!this.jornadaActiva) {
             UI.showAlert('No tienes una jornada activa.', 'warning');
             return;
         }
 
-        // Obtener el ID del servicio a partir del catálogo en memoria o BD
-        const serv = this.catalogo.find(c => c.nombre === servicioNombre);
-        let servicioId = serv ? serv.id : null;
-
+        // Si no se tiene el id, buscarlo en el catálogo por nombre
         if (!servicioId) {
-            const { data: servData } = await db
-                .from('catalogo_servicios')
-                .select('id')
-                .eq('nombre', servicioNombre)
-                .maybeSingle();
-            if (servData) servicioId = servData.id;
+            const serv = this.catalogo.find(c => c.nombre.toLowerCase() === servicioNombre.toLowerCase());
+            if (serv) {
+                servicioId = serv.id;
+            } else {
+                const { data: servData } = await db
+                    .from('catalogo_servicios')
+                    .select('id')
+                    .ilike('nombre', servicioNombre)
+                    .maybeSingle();
+                if (servData) servicioId = servData.id;
+            }
         }
 
         if (!servicioId) {
+            console.error('No se pudo determinar el ID del servicio:', servicioNombre);
             UI.showAlert('No se encontró el servicio para eliminar.', 'error');
             return;
         }
 
-        // Buscar el último registro insertado de este servicio en la jornada activa
-        const { data: reg, error: regError } = await db
+        // 1. Buscar el último registro insertado de este servicio en la jornada activa (id individual)
+        const { data: reg, error: findError } = await db
             .from('servicios_realizados')
             .select('id')
             .eq('jornada_id', this.jornadaActiva.id)
             .eq('servicio_id', servicioId)
-            .order('fecha_registro', { ascending: false })
+            .order('id', { ascending: false })
             .limit(1)
             .maybeSingle();
 
-        if (regError || !reg) {
+        if (findError) {
+            console.error('Error al buscar registro individual:', findError);
+            UI.showAlert('Error al buscar registro: ' + findError.message, 'error');
+            return;
+        }
+
+        if (!reg) {
+            console.error('No se encontró registro para servicio_id:', servicioId, 'en jornada_id:', this.jornadaActiva.id);
             UI.showAlert('No se encontró ningún registro para eliminar.', 'error');
             return;
         }
 
-        // Eliminar únicamente ese registro
-        const { error: delError } = await db
+        // 2. Eliminar usando el ID del registro individual y comprobar filas con .select()
+        const { data: deletedRows, error: delError } = await db
             .from('servicios_realizados')
             .delete()
-            .eq('id', reg.id);
+            .eq('id', reg.id)
+            .select();
 
         if (delError) {
+            console.error('Error al ejecutar delete en Supabase:', delError);
             UI.showAlert('Error al eliminar servicio: ' + delError.message, 'error');
             return;
         }
 
+        // 3. Si devolvió 0 filas borradas (por ejemplo por bloqueo de RLS en Supabase)
+        if (!deletedRows || deletedRows.length === 0) {
+            console.error('Delete retornó 0 filas eliminadas para el id:', reg.id, 'Verifica la política RLS de DELETE en servicios_realizados.');
+            UI.showAlert('No se pudo eliminar, revisa permisos', 'error');
+            return;
+        }
+
+        // 4. Éxito: notificar y recargar totales
         UI.showAlert(`Se eliminó 1 servicio de ${servicioNombre}`, 'success');
         await this.actualizarResumen();
     }
