@@ -201,12 +201,15 @@ select {
         -webkit-overflow-scrolling: touch;
         gap: 0.75rem !important;
         padding-bottom: 0.25rem;
-        scrollbar-width: none; /* Firefox */
-        -ms-overflow-style: none; /* IE/Edge */
+        scrollbar-width: none;
+        /* Firefox */
+        -ms-overflow-style: none;
+        /* IE/Edge */
     }
 
     #botones-servicios::-webkit-scrollbar {
-        display: none; /* Chrome, Safari, Android, iOS */
+        display: none;
+        /* Chrome, Safari, Android, iOS */
     }
 
     #botones-servicios .pos-btn {
