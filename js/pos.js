@@ -49,7 +49,10 @@ const POS = {
         }
 
         container.innerHTML = this.catalogo.map(s => {
+            // El JSONB precios_por_sede guarda las llaves como "1", "2", "3", "4"
             const precios = s.precios_por_sede || {};
+
+            // Extraer el precio de la sede actual, respaldado por el precio general
             const precioSede = Number(precios[sedeActual] ?? precios[String(sedeActual)] ?? s.precio ?? 0);
 
             return `
@@ -65,11 +68,6 @@ const POS = {
     },
 
     async verificarJornadaActiva() {
-        // Validación de seguridad para evitar errores si Auth no está listo o no hay sesión
-        if (typeof Auth === 'undefined' || typeof Auth.getUserId !== 'function') {
-            return;
-        }
-
         const userId = Auth.getUserId();
         if (!userId) return;
 
@@ -122,10 +120,6 @@ const POS = {
         }
 
         const userId = Auth.getUserId();
-        if (!userId) {
-            UI.showAlert('No hay sesión de usuario activa.', 'error');
-            return;
-        }
 
         const { data, error } = await db
             .from('jornadas')
@@ -187,6 +181,7 @@ const POS = {
         const servicio = this.catalogo.find(s => s.id === servicioId);
         if (!servicio) return;
 
+        // Extraer precio exacto de la sede activa del turno para guardarlo en la BD
         const sedeActivaId = String(this.jornadaActiva.sede_id);
         const precios = servicio.precios_por_sede || {};
         const precioCobrar = Number(precios[sedeActivaId] ?? precios[String(sedeActivaId)] ?? servicio.precio) || 0;
