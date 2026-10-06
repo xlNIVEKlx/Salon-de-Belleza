@@ -144,6 +144,7 @@ const Caja = {
 
         this.ultimoResumen = resumen;
         container.innerHTML = html || '<p class="text-gray-400 text-center col-span-full">No se encontraron sedes activas.</p>';
+
     },
 
     /**
