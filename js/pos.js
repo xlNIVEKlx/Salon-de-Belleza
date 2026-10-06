@@ -135,7 +135,12 @@ const POS = {
      */
     async cerrarJornada() {
         if (!this.jornadaActiva) return;
-        if (!confirm('¿Seguro que deseas CERRAR TU TURNO? Ya no podrás registrar más servicios en esta jornada.')) return;
+        const confirmar = await UI.confirm({
+            title: 'Cerrar Turno',
+            message: '¿Seguro que deseas CERRAR TU TURNO? Ya no podrás registrar más servicios en esta jornada.',
+            confirmText: 'Cerrar Turno'
+        });
+        if (!confirmar) return;
 
         const { error } = await db
             .from('jornadas')
@@ -244,7 +249,13 @@ const POS = {
      * Confirmación previa a la eliminación de un servicio registrado
      */
     async confirmarEliminarServicio(servicioNombre) {
-        if (!confirm('¿Seguro que quieres eliminar este servicio?')) return;
+        const confirmar = await UI.confirm({
+            title: 'Eliminar servicio registrado',
+            message: '¿Seguro que quieres eliminar este servicio?',
+            itemName: servicioNombre,
+            confirmText: 'Eliminar'
+        });
+        if (!confirmar) return;
         await this.eliminarUnServicio(servicioNombre);
     },
 

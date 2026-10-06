@@ -29,9 +29,11 @@ const Catalogo = {
                 </td>
                 <td class="px-6 py-4 text-right">
                     ${s.activo ? `
-                        <button onclick="Catalogo.editarServicio(${s.id})" class="text-blue-600 hover:text-blue-800 mr-3"><i class="fa-solid fa-edit"></i></button>
-                        <button onclick="Catalogo.desactivarServicio(${s.id})" class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                    ` : '<span class="text-xs text-gray-400">Desactivado</span>'}
+                        <button onclick="Catalogo.editarServicio(${s.id})" class="text-blue-600 hover:text-blue-800 mr-3" title="Editar"><i class="fa-solid fa-edit"></i></button>
+                    ` : `
+                        <button onclick="Catalogo.reactivarServicio(${s.id})" class="text-green-600 hover:text-green-800 mr-3" title="Reactivar servicio"><i class="fa-solid fa-rotate-left"></i></button>
+                    `}
+                    <button onclick="Catalogo.desactivarServicio(${s.id}, '${s.nombre.replace(/'/g, "\\'")}')" class="text-red-600 hover:text-red-800" title="Eliminar"><i class="fa-solid fa-trash"></i></button>
                 </td>
             </tr>
         `).join('');
@@ -85,20 +87,58 @@ const Catalogo = {
         document.getElementById('modal-servicio').classList.remove('hidden');
     },
 
-    async desactivarServicio(id) {
-        if (!confirm('¿Estás seguro de desactivar este servicio? Ya no aparecerá en el POS.')) return;
-
+    async reactivarServicio(id) {
         const { error } = await db
             .from('catalogo_servicios')
-            .update({ activo: false })
+            .update({ activo: true })
             .eq('id', id);
 
         if (error) {
-            UI.showAlert('Error al desactivar: ' + error.message, 'error');
+            UI.showAlert('Error al reactivar servicio: ' + error.message, 'error');
             return;
         }
 
-        UI.showAlert('Servicio desactivado correctamente');
+        UI.showAlert('Servicio reactivado exitosamente', 'success');
+        this.cargarLista();
+        POS.cargarCatalogo();
+    },
+
+    async desactivarServicio(id, nombre = '') {
+        const confirmar = await UI.confirm({
+            title: 'Eliminar servicio del catálogo',
+            message: '¿Seguro que quieres eliminar este servicio?',
+            itemName: nombre,
+            confirmText: 'Eliminar'
+        });
+
+        if (!confirmar) return;
+
+        // Intentar eliminar de la base de datos
+        const { error } = await db
+            .from('catalogo_servicios')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            // Si ya tiene registros asociados en servicios_realizados (violación de foreign key)
+            if (error.code === '23503' || (error.message && error.message.toLowerCase().includes('foreign key'))) {
+                // Opción A: Desactivar en lugar de eliminar y avisar al usuario
+                await db
+                    .from('catalogo_servicios')
+                    .update({ activo: false })
+                    .eq('id', id);
+
+                UI.showAlert('Este servicio ya tiene ventas registradas, por eso se desactivó en lugar de eliminarse', 'warning');
+                this.cargarLista();
+                POS.cargarCatalogo();
+                return;
+            }
+
+            UI.showAlert('Error al eliminar servicio: ' + error.message, 'error');
+            return;
+        }
+
+        UI.showAlert('Servicio eliminado correctamente');
         this.cargarLista();
         POS.cargarCatalogo();
     }
