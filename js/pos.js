@@ -1,6 +1,6 @@
 // ============================================================
 // MÓDULO: POS (PUNTO DE VENTA Y JORNADA)
-// Maneja turnos y registro de servicios con Supabase
+// Maneja turnos y registro de servicios aplicando el precio por sede
 // ============================================================
 
 const POS = {
@@ -27,7 +27,7 @@ const POS = {
     },
 
     /**
-     * Renderiza los botones del POS táctil
+     * Renderiza los botones del POS táctil mostrando el precio de la sede activa
      */
     renderBotones() {
         const container = document.getElementById('botones-servicios');
@@ -38,15 +38,24 @@ const POS = {
             return;
         }
 
-        container.innerHTML = this.catalogo.map(s => `
+        // Obtener la sede activa del turno (por defecto Sede 1 si no hay turno abierto)
+        const sedeActual = this.jornadaActiva?.sede_id ? String(this.jornadaActiva.sede_id) : "1";
+
+        container.innerHTML = this.catalogo.map(s => {
+            const precios = s.precios_por_sede || {};
+            // Extraer el precio correspondiente a la sede de la jornada actual
+            const precioSede = precios[sedeActual] ?? s.precio ?? 0;
+
+            return `
             <button onclick="POS.registrarServicio(${s.id}, '${s.nombre}')" class="pos-btn group">
                 <div class="bg-pink-50 text-pink-600 rounded-full w-12 h-12 flex items-center justify-center mb-2 group-hover:bg-pink-100 transition">
                     <i class="fa-solid fa-hand-sparkles text-xl"></i>
                 </div>
                 <p class="font-bold text-gray-800 text-sm leading-tight">${s.nombre}</p>
-                <p class="text-xs text-gray-500 mt-1">${UI.formatCurrency(s.precio)}</p>
+                <p class="text-xs text-gray-500 mt-1">${UI.formatCurrency(precioSede)}</p>
             </button>
-        `).join('');
+        `;
+        }).join('');
     },
 
     /**
@@ -70,6 +79,7 @@ const POS = {
 
         this.jornadaActiva = data;
         this.actualizarUI();
+        this.renderBotones(); // Actualizar botones con el precio de la sede al verificar
 
         if (this.jornadaActiva) {
             this.actualizarResumen();
@@ -127,6 +137,7 @@ const POS = {
         this.jornadaActiva = data;
         UI.showAlert('Turno abierto exitosamente', 'success');
         this.actualizarUI();
+        this.renderBotones(); // Refrescar precios en los botones según la sede seleccionada
         this.actualizarResumen();
     },
 
@@ -158,10 +169,11 @@ const POS = {
         this.jornadaActiva = null;
         UI.showAlert('Turno finalizado con éxito', 'success');
         this.actualizarUI();
+        this.renderBotones();
     },
 
     /**
-     * Registra un servicio en la jornada activa calculando el precio según la sede
+     * Registra un servicio calculando el precio y comisión de la sede activa
      */
     async registrarServicio(servicioId, nombre) {
         if (!this.jornadaActiva) {
@@ -169,23 +181,19 @@ const POS = {
             return;
         }
 
-        // 1. Buscar el servicio en el catálogo para conocer sus precios y comisión
         const servicio = this.catalogo.find(s => s.id === servicioId);
         if (!servicio) return;
 
-        // 2. Extraer el precio dependiendo de la sede donde se abrió el turno
-        const sedeActivaId = this.jornadaActiva.sede_id;
+        // Extraer precio según la sede de la jornada
+        const sedeActivaId = String(this.jornadaActiva.sede_id);
         const precios = servicio.precios_por_sede || {};
+        const precioCobrar = Number(precios[sedeActivaId]) ?? Number(servicio.precio) ?? 0;
 
-        // Si existe un precio para esta sede lo usa, de lo contrario usa el precio base
-        const precioCobrar = Number(precios[sedeActivaId]) || Number(servicio.precio) || 0;
-
-        // 3. Calculamos todo aquí en el frontend para asegurar exactitud
-        const comisionPorcentaje = Number(servicio.comision_porcentaje) || 0;
-        const valorComision = precioCobrar * (comisionPorcentaje / 100);
+        // Calcular comisión y caja usando el porcentaje en entero
+        const porcentajeComision = Number(servicio.porcentaje_comision) || 0;
+        const valorComision = precioCobrar * (porcentajeComision / 100);
         const valorCaja = precioCobrar - valorComision;
 
-        // 4. Enviamos los valores reales calculados a Supabase
         const { error } = await db
             .from('servicios_realizados')
             .insert([{
@@ -193,7 +201,7 @@ const POS = {
                 servicio_id: servicioId,
                 cantidad: 1,
                 precio_unitario: precioCobrar,
-                porcentaje_comision_aplicado: comisionPorcentaje,
+                porcentaje_comision_aplicado: porcentajeComision,
                 total_cobrado: precioCobrar,
                 comision_empleada: valorComision,
                 total_caja_salon: valorCaja
@@ -204,7 +212,7 @@ const POS = {
             return;
         }
 
-        UI.showAlert(`¡Registrado: 1 x ${nombre} por ${UI.formatCurrency(precioCobrar)}!`, 'success');
+        UI.showAlert(`¡Registrado: 1 x ${nombre} (${UI.formatCurrency(precioCobrar)})!`, 'success');
         this.actualizarResumen();
     },
 
@@ -221,7 +229,6 @@ const POS = {
 
         const resumen = data || { servicios: [], granTotalCobrado: 0, granTotalComision: 0, granTotalCajaSalon: 0 };
 
-        // Actualizar etiquetas
         const totalEl = document.getElementById('lbl-gran-total');
         const comisionEl = document.getElementById('lbl-gran-comision');
         const cajaEl = document.getElementById('lbl-gran-caja');
@@ -230,7 +237,6 @@ const POS = {
         if (comisionEl) comisionEl.textContent = UI.formatCurrency(resumen.granTotalComision);
         if (cajaEl) cajaEl.textContent = UI.formatCurrency(resumen.granTotalCajaSalon);
 
-        // Actualizar lista
         const list = document.getElementById('resumen-servicios-lista');
         if (!list) return;
 
@@ -266,9 +272,6 @@ const POS = {
         }).join('');
     },
 
-    /**
-     * Confirmación previa a la eliminación de un servicio registrado usando el modal de la app
-     */
     async confirmarEliminarServicio(servicioId, servicioNombre) {
         const confirmar = await UI.confirm({
             title: 'Eliminar servicio registrado',
@@ -280,16 +283,12 @@ const POS = {
         await this.eliminarUnServicio(servicioId, servicioNombre);
     },
 
-    /**
-     * Elimina un único registro del servicio usando su id individual y recalcula los totales
-     */
     async eliminarUnServicio(servicioId, servicioNombre) {
         if (!this.jornadaActiva) {
             UI.showAlert('No tienes una jornada activa.', 'warning');
             return;
         }
 
-        // Si no se tiene el id, buscarlo en el catálogo por nombre
         if (!servicioId) {
             const serv = this.catalogo.find(c => c.nombre.toLowerCase() === servicioNombre.toLowerCase());
             if (serv) {
@@ -305,12 +304,10 @@ const POS = {
         }
 
         if (!servicioId) {
-            console.error('No se pudo determinar el ID del servicio:', servicioNombre);
             UI.showAlert('No se encontró el servicio para eliminar.', 'error');
             return;
         }
 
-        // 1. Buscar el último registro insertado de este servicio en la jornada activa (id individual)
         const { data: reg, error: findError } = await db
             .from('servicios_realizados')
             .select('id')
@@ -320,39 +317,22 @@ const POS = {
             .limit(1)
             .maybeSingle();
 
-        if (findError) {
-            console.error('Error al buscar registro individual:', findError);
-            UI.showAlert('Error al buscar registro: ' + findError.message, 'error');
-            return;
-        }
-
-        if (!reg) {
-            console.error('No se encontró registro para servicio_id:', servicioId, 'en jornada_id:', this.jornadaActiva.id);
+        if (findError || !reg) {
             UI.showAlert('No se encontró ningún registro para eliminar.', 'error');
             return;
         }
 
-        // 2. Eliminar usando el ID del registro individual y comprobar filas con .select()
         const { data: deletedRows, error: delError } = await db
             .from('servicios_realizados')
             .delete()
             .eq('id', reg.id)
             .select();
 
-        if (delError) {
-            console.error('Error al ejecutar delete en Supabase:', delError);
-            UI.showAlert('Error al eliminar servicio: ' + delError.message, 'error');
-            return;
-        }
-
-        // 3. Si devolvió 0 filas borradas (por ejemplo por bloqueo de RLS en Supabase)
-        if (!deletedRows || deletedRows.length === 0) {
-            console.error('Delete retornó 0 filas eliminadas para el id:', reg.id, 'Verifica la política RLS de DELETE en servicios_realizados.');
+        if (delError || !deletedRows || deletedRows.length === 0) {
             UI.showAlert('No se pudo eliminar, revisa permisos', 'error');
             return;
         }
 
-        // 4. Éxito: notificar y recargar totales
         UI.showAlert(`Se eliminó 1 servicio de ${servicioNombre}`, 'success');
         await this.actualizarResumen();
     }
