@@ -1,6 +1,6 @@
 // ============================================================
-// MÓDULO: CATÁLOGO DE SERVICIOS (Versión Anti-Errores)
-// Permite gestionar servicios con precios independientes por sede
+// MÓDULO: CATÁLOGO DE SERVICIOS
+// Gestión de servicios con precios por sede y enteros limpios
 // ============================================================
 
 const Catalogo = {
@@ -49,30 +49,36 @@ const Catalogo = {
             return;
         }
 
+        // Detectar sede actual del POS o usar Sede 1 por defecto
+        let sedeActual = "1";
+        if (typeof POS !== 'undefined' && POS.jornadaActiva && POS.jornadaActiva.sede_id) {
+            sedeActual = String(POS.jornadaActiva.sede_id);
+        }
+
+        const nombresSedes = {
+            "1": "Aeropuerto",
+            "2": "Torcoroma",
+            "3": "Patios",
+            "4": "Chapinero"
+        };
+
         try {
             tbody.innerHTML = this.servicios.map(s => {
                 const p = s.precios_por_sede || {};
+                const precioSedeActual = p[sedeActual] ?? s.precio ?? 0;
+                const nombreSedeTexto = nombresSedes[sedeActual] || "Sede";
 
-                // Uso de ?? (Nullish coalescing) para evitar que valores nulos rompan la tabla
-                const pAero = p["1"] ?? s.precio ?? 0;
-                const pTorc = p["2"] ?? s.precio ?? 0;
-                const pPat = p["3"] ?? s.precio ?? 0;
-                const pChap = p["4"] ?? s.precio ?? 0;
-
-                const preciosResumen = `
-                    <div class="text-xs text-gray-500 space-y-0.5">
-                        <div><span class="font-medium text-gray-700">Aero:</span> ${UI.formatCurrency(pAero)}</div>
-                        <div><span class="font-medium text-gray-700">Torc:</span> ${UI.formatCurrency(pTorc)}</div>
-                        <div><span class="font-medium text-gray-700">Pat:</span> ${UI.formatCurrency(pPat)}</div>
-                        <div><span class="font-medium text-gray-700">Chap:</span> ${UI.formatCurrency(pChap)}</div>
-                    </div>
-                `;
+                // Comisión estricta en formato entero (sin decimales)
+                const comisionEntera = Math.round(Number(s.porcentaje_comision ?? 0));
 
                 return `
                 <tr class="hover:bg-pink-50/30 transition border-b border-gray-50 last:border-0">
                     <td class="px-6 py-4 font-bold text-gray-800">${s.nombre || 'Sin nombre'}</td>
-                    <td class="px-6 py-4">${preciosResumen}</td>
-                    <td class="px-6 py-4 font-medium text-pink-600">${s.comision_porcentaje ?? 0}%</td>
+                    <td class="px-6 py-4">
+                        <div class="text-base font-bold text-gray-900">${UI.formatCurrency(precioSedeActual)}</div>
+                        <div class="text-xs text-pink-600 font-medium">Sede: ${nombreSedeTexto}</div>
+                    </td>
+                    <td class="px-6 py-4 font-medium text-pink-600">${comisionEntera}%</td>
                     <td class="px-6 py-4 text-center">
                         <span class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-lg font-bold">Activo</span>
                     </td>
@@ -88,7 +94,7 @@ const Catalogo = {
             }).join('');
         } catch (err) {
             console.error('Error dibujando la tabla:', err);
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-500 py-4">Ocurrió un error al mostrar los servicios. Revisa la consola.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-500 py-4">Ocurrió un error al mostrar los servicios.</td></tr>';
         }
     },
 
@@ -96,14 +102,16 @@ const Catalogo = {
         const form = document.getElementById('form-servicio');
         form.reset();
         document.getElementById('servicio-id').value = '';
-        document.getElementById('modal-servicio-title').innerText = id ? 'Editar Servicio' : 'Nuevo Servicio';
+        document.getElementById('modal-servicio-title').innerText = id ? 'Editar Servicio y Precios por Sede' : 'Nuevo Servicio';
 
         if (id) {
             const s = this.servicios.find(x => String(x.id) === String(id));
             if (s) {
                 document.getElementById('servicio-id').value = s.id;
                 document.getElementById('servicio-nombre').value = s.nombre;
-                document.getElementById('servicio-comision').value = s.comision_porcentaje;
+
+                // Cargar comisión como número entero limpio en el input
+                document.getElementById('servicio-comision').value = Math.round(Number(s.porcentaje_comision ?? 0));
 
                 const p = s.precios_por_sede || {};
                 document.getElementById('precio-sede-1').value = p["1"] ?? s.precio ?? '';
@@ -124,9 +132,12 @@ const Catalogo = {
         const id = document.getElementById('servicio-id').value;
         const p1 = Number(document.getElementById('precio-sede-1').value) || 0;
 
+        // Capturar comisión estrictamente como entero
+        const comisionValor = parseInt(document.getElementById('servicio-comision').value, 10) || 0;
+
         const payload = {
             nombre: document.getElementById('servicio-nombre').value,
-            comision_porcentaje: Number(document.getElementById('servicio-comision').value) || 0,
+            porcentaje_comision: comisionValor,
             precio: p1,
             precios_por_sede: {
                 "1": p1,
