@@ -47,10 +47,6 @@ const Caja = {
                 <input id="caja-fecha" type="date" value="${this.fecha}" max="${this.hoy()}"
                        class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
             </div>
-            <button id="caja-excel" type="button"
-                    class="bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-semibold">
-                <i class="fa-solid fa-file-excel mr-1"></i> Descargar Excel
-            </button>
         `;
         container.parentElement.insertBefore(barra, container);
 
@@ -62,7 +58,6 @@ const Caja = {
             this.fecha = e.target.value || this.hoy();
             this.cargarCajaSedes();
         });
-        document.getElementById('caja-excel').addEventListener('click', () => this.descargarExcel());
     },
 
     /**
@@ -149,43 +144,6 @@ const Caja = {
 
         this.ultimoResumen = resumen;
         container.innerHTML = html || '<p class="text-gray-400 text-center col-span-full">No se encontraron sedes activas.</p>';
-    },
-
-    /**
-     * Descarga en Excel lo que se está viendo (sede y fecha elegidas)
-     */
-    descargarExcel() {
-        if (typeof XLSX === 'undefined') {
-            UI.showAlert('No se pudo cargar la librería de Excel.', 'error');
-            return;
-        }
-        if (!this.ultimoResumen.length) {
-            UI.showAlert('No hay datos para descargar.', 'error');
-            return;
-        }
-
-        const filas = this.ultimoResumen.map(c => ({
-            'Sede': c.sede_nombre,
-            'Fecha': this.fecha,
-            'Total Producido': Number(c.total_producido || 0),
-            'Comisiones': Number(c.total_comisiones || 0),
-            'Efectivo en Caja (Neto)': Number(c.total_caja_salon || 0)
-        }));
-
-        if (filas.length > 1) {
-            filas.push({
-                'Sede': 'TOTAL',
-                'Fecha': this.fecha,
-                'Total Producido': filas.reduce((a, f) => a + f['Total Producido'], 0),
-                'Comisiones': filas.reduce((a, f) => a + f['Comisiones'], 0),
-                'Efectivo en Caja (Neto)': filas.reduce((a, f) => a + f['Efectivo en Caja (Neto)'], 0)
-            });
-        }
-
-        const hoja = XLSX.utils.json_to_sheet(filas);
-        const libro = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(libro, hoja, 'Caja');
-        XLSX.writeFile(libro, `caja_${this.fecha}.xlsx`);
     },
 
     /**
