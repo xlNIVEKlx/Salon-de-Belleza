@@ -105,7 +105,7 @@ const App = {
         this.cerrarSidebar();
 
         // Inicializar vistas según corresponda
-        if (nombreVista === 'catalogo') Catalogo.cargarLista();
+        if (nombreVista === 'catalogo') Catalogo.iniciar();
         if (nombreVista === 'caja') Caja.iniciar(this.sedes);
     },
 
